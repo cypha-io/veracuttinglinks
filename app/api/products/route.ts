@@ -139,8 +139,8 @@ export async function POST(request: Request) {
       Array.isArray(body.variations) &&
       body.variations.some(variation => Boolean(variation?.regularPrice?.trim()));
 
-    if (!body.name?.trim() || !body.image?.trim() || !body.category?.trim() || (!body.regularPrice?.trim() && !variationHasPrice)) {
-      return Response.json({ error: 'Missing required product fields' }, { status: 400 });
+    if (!body.name?.trim() || !body.image?.trim() || !body.category?.trim()) {
+      return Response.json({ error: 'Missing required product fields (name, image, category)' }, { status: 400 });
     }
 
     client = await pool.connect();
@@ -190,11 +190,7 @@ export async function POST(request: Request) {
       : [];
 
     const firstVariationPrice = normalizedVariations.find(variation => variation.regularPrice)?.regularPrice || '';
-    const finalPrice = regularPrice || firstVariationPrice;
-
-    if (!finalPrice) {
-      return Response.json({ error: 'A price value is required' }, { status: 400 });
-    }
+    const finalPrice = regularPrice || firstVariationPrice || '0';
 
     const stock = body.stock !== undefined && body.stock !== null ? Number(body.stock) : null;
     const totalVariationStock = normalizedVariations.reduce(

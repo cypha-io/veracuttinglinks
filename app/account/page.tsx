@@ -1,30 +1,20 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FiPhone } from 'react-icons/fi';
+import { FiPhone, FiLock, FiShield } from 'react-icons/fi';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 
-type AuthStep = 'phone' | 'login' | 'signup';
 type ForgotStage = 'request' | 'verify' | 'reset';
-
-type Profile = {
-  fullName: string;
-  phone: string;
-  role?: 'user' | 'admin';
-  email: string;
-  address: string;
-  city: string;
-};
 
 const normalizePhoneInput = (value: string) => value.replace(/\D/g, '').slice(0, 10);
 const isValidPhone = (value: string) => /^0\d{9}$/.test(value);
 
 export default function AccountPage() {
   const router = useRouter();
-  const [step, setStep] = useState<AuthStep>('phone');
+  const [checkingSession, setCheckingSession] = useState(true);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [authError, setAuthError] = useState('');
@@ -36,14 +26,32 @@ export default function AccountPage() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const [profile, setProfile] = useState<Profile>({
-    fullName: '',
-    phone: '',
-    email: '',
-    address: '',
-    city: 'Accra',
-  });
+
   const resetCode = resetCodeDigits.join('');
+
+  useEffect(() => {
+    const checkAdminSession = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' });
+        if (res.ok) {
+          const data = (await res.json()) as {
+            authenticated?: boolean;
+            profile?: { role?: string };
+          };
+          if (data.authenticated && data.profile?.role === 'admin') {
+            router.replace('/admin/dashboard');
+            return;
+          }
+        }
+      } catch {
+        // Continue to sign in form
+      } finally {
+        setCheckingSession(false);
+      }
+    };
+
+    void checkAdminSession();
+  }, [router]);
 
   const focusResetDigit = (index: number) => {
     const target = codeInputRefs.current[index];
@@ -150,54 +158,20 @@ export default function AccountPage() {
     fillResetDigitsFrom(index, text);
   };
 
-  const lookupPhone = async () => {
-    const normalized = normalizePhoneInput(phone);
-    if (!isValidPhone(normalized)) {
-      setAuthError('Enter a valid phone number (10 digits, starts with 0).');
+  const login = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const normalizedPhone = normalizePhoneInput(phone);
+
+    if (!isValidPhone(normalizedPhone)) {
+      setAuthError('Enter a valid 10-digit phone number starting with 0.');
       return;
     }
 
-    try {
-      setLoading(true);
-      setAuthError('');
-      setAuthSuccess('');
-
-      const response = await fetch('/api/auth/phone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalized }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Failed to check phone');
-      }
-
-      const payload = (await response.json()) as {
-        exists: boolean;
-        hasPassword: boolean;
-        profile?: Profile;
-      };
-
-      if (payload.profile) {
-        setProfile(payload.profile);
-      } else {
-        setProfile(prev => ({ ...prev, phone: normalized }));
-      }
-
-      if (payload.exists && payload.hasPassword) {
-        setStep('login');
-      } else {
-        setStep('signup');
-      }
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Failed to check phone');
-    } finally {
-      setLoading(false);
+    if (!password) {
+      setAuthError('Please enter your password.');
+      return;
     }
-  };
 
-  const login = async () => {
     try {
       setLoading(true);
       setAuthError('');
@@ -206,7 +180,7 @@ export default function AccountPage() {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: normalizePhoneInput(phone), password }),
+        body: JSON.stringify({ phone: normalizedPhone, password }),
       });
 
       if (!response.ok) {
@@ -214,57 +188,19 @@ export default function AccountPage() {
         throw new Error(payload.error || 'Login failed');
       }
 
-      const payload = (await response.json()) as { profile: Profile };
+      const payload = (await response.json()) as {
+        profile: { phone: string; role: string };
+      };
+
+      if (payload.profile?.role !== 'admin') {
+        throw new Error('Access denied. Only admin accounts are permitted.');
+      }
+
       window.localStorage.setItem('wf-user-phone', payload.profile.phone);
-      const target = payload.profile.role === 'admin' ? '/admin/dashboard' : '/';
-      router.push(target);
+      router.replace('/admin/dashboard');
       router.refresh();
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Login failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signup = async () => {
-    const normalizedPhone = normalizePhoneInput(phone);
-
-    if (!profile.fullName.trim()) {
-      setAuthError('Full name is required.');
-      return;
-    }
-    if (!isValidPhone(normalizedPhone)) {
-      setAuthError('Phone number must be 10 digits and start with 0.');
-      return;
-    }
-    if (password.trim().length < 6) {
-      setAuthError('Password must be at least 6 characters.');
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setAuthError('');
-      setAuthSuccess('');
-
-      const response = await fetch('/api/auth/signup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...profile, phone: normalizedPhone, password }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Signup failed');
-      }
-
-      const payload = (await response.json()) as { profile: Profile };
-      window.localStorage.setItem('wf-user-phone', payload.profile.phone);
-      const target = payload.profile.role === 'admin' ? '/admin/dashboard' : '/';
-      router.push(target);
-      router.refresh();
-    } catch (error) {
-      setAuthError(error instanceof Error ? error.message : 'Signup failed');
     } finally {
       setLoading(false);
     }
@@ -407,301 +343,281 @@ export default function AccountPage() {
     }
   };
 
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Navbar />
+        <div className="text-center p-8">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-black border-t-transparent" />
+          <p className="mt-4 text-sm font-bold text-gray-600">Verifying Admin Session...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
 
-      <main className="mx-auto max-w-6xl px-4 py-10 pt-24 sm:px-6 sm:py-14 md:pt-32">
+      <main className="mx-auto max-w-5xl px-4 py-10 pt-24 sm:px-6 sm:py-14 md:pt-32">
         <div className="mb-10 flex flex-col items-center">
-          <span className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-black md:text-sm">Welcome</span>
-          <h1 className="text-3xl font-black tracking-tight text-gray-800 sm:text-4xl md:text-5xl">My Account</h1>
+          <span className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-black md:text-sm">Admin Portal</span>
+          <h1 className="text-3xl font-black tracking-tight text-gray-800 sm:text-4xl md:text-5xl">Administrator Sign In</h1>
           <div className="mt-6 mb-4 h-1.5 w-16 rounded-full bg-gradient-to-r from-black to-gray-900 shadow-sm" />
-          <p className="text-gray-500 font-medium text-center">Secure access with your phone number.</p>
+          <p className="text-gray-500 font-medium text-center max-w-md">
+            Sign in with your authorized admin credentials to access the store management dashboard.
+          </p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-6">
-          <div className="rounded-[2.5rem] bg-gradient-to-br from-black to-gray-900 p-8 text-white shadow-xl shadow-none md:p-10">
+        <div className="grid lg:grid-cols-12 gap-8 items-center">
+          {/* Admin Info Banner */}
+          <div className="lg:col-span-5 rounded-[2.5rem] bg-gradient-to-br from-black to-gray-900 p-8 text-white shadow-xl md:p-10">
             <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/20 shadow-inner backdrop-blur-md">
-                <FiPhone className="text-3xl drop-shadow-md" />
+                <FiShield className="text-3xl drop-shadow-md text-white" />
               </div>
               <div>
-                <h2 className="text-2xl font-black drop-shadow-md">Phone-First Access</h2>
-                <p className="text-sm font-medium text-white/90">We detect existing users automatically.</p>
+                <h2 className="text-2xl font-black drop-shadow-md">Admin Portal</h2>
+                <p className="text-sm font-medium text-white/80">Authorized Access Only</p>
               </div>
             </div>
             <ul className="space-y-4 text-sm font-medium text-white/90">
               <li className="flex items-center gap-3">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white shadow-sm shadow-none"></span>
-                Existing users sign in with password.
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white shadow-sm"></span>
+                Access live revenue & order analytics.
               </li>
               <li className="flex items-center gap-3">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white shadow-sm shadow-white/50"></span>
-                New users complete a quick signup.
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white shadow-sm"></span>
+                Manage catalog products & pricing.
               </li>
               <li className="flex items-center gap-3">
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gray-900 shadow-sm shadow-gray-900/50"></span>
-                Successful auth opens your dashboard.
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-white shadow-sm"></span>
+                Control store live/maintenance status.
               </li>
             </ul>
           </div>
 
-          <div className="rounded-[2.5rem] bg-white p-8 shadow-sm ring-1 ring-gray-200 md:p-10">
-            <h3 className="mb-2 text-2xl font-black text-gray-800">
-              {step === 'phone' && 'Enter Phone Number'}
-              {step === 'login' && 'Enter Password'}
-              {step === 'signup' && 'Complete Sign Up'}
-            </h3>
-
+          {/* Admin Sign-In Form */}
+          <div className="lg:col-span-7 rounded-[2.5rem] bg-white p-8 shadow-sm ring-1 ring-gray-200 md:p-10">
+            <h2 className="mb-2 text-2xl font-black text-gray-800">
+              {forgotMode ? 'Reset Admin Password' : 'Admin Sign In'}
+            </h2>
             <p className="mb-8 text-sm font-medium text-gray-500">
-              {step === 'phone' && 'We will use this to identify your account automatically.'}
-              {step === 'login' && `Welcome back. Phone: ${phone.trim()}`}
-              {step === 'signup' && 'No account found with this number. Fill your details below.'}
+              {forgotMode
+                ? 'Follow the steps to reset your administrator password.'
+                : 'Enter your phone number and password below.'}
             </p>
 
-            {step === 'phone' && (
-              <>
-                <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="phone">Phone Number</label>
-                <div className="relative">
-                  <FiPhone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    id="phone"
-                    type="tel"
-                    value={phone}
-                    onChange={(e) => setPhone(normalizePhoneInput(e.target.value))}
-                    inputMode="numeric"
-                    pattern="0[0-9]{9}"
-                    maxLength={10}
-                    placeholder="0XXXXXXXXX"
-                    className="w-full rounded-[1.5rem] bg-gray-50 py-4 pl-12 pr-5 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                </div>
-                <button
-                  onClick={lookupPhone}
-                  disabled={loading}
-                  className="mt-8 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
-                >
-                  {loading ? 'Checking...' : 'Continue'}
-                </button>
-              </>
-            )}
-
-            {step === 'login' && (
-              <>
-                {!forgotMode && (
-                  <>
-                    <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="password">Password</label>
+            {!forgotMode ? (
+              <form onSubmit={login} className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="admin-phone">
+                    Phone Number
+                  </label>
+                  <div className="relative">
+                    <FiPhone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
-                      id="password"
+                      id="admin-phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(normalizePhoneInput(e.target.value))}
+                      inputMode="numeric"
+                      pattern="0[0-9]{9}"
+                      maxLength={10}
+                      placeholder="0XXXXXXXXX"
+                      required
+                      className="w-full rounded-[1.5rem] bg-gray-50 py-4 pl-12 pr-5 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="admin-password">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <FiLock className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <input
+                      id="admin-password"
                       type="password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter password"
-                      className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                      placeholder="Enter admin password"
+                      required
+                      className="w-full rounded-[1.5rem] bg-gray-50 py-4 pl-12 pr-5 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
                     />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="mt-6 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg transition-all duration-300 hover:scale-[1.01] hover:shadow-xl disabled:scale-100 disabled:opacity-60 cursor-pointer"
+                >
+                  {loading ? 'Authenticating...' : 'Sign In as Admin'}
+                </button>
+
+                <div className="text-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setForgotMode(true);
+                      setForgotStage('request');
+                      clearResetCode();
+                      setNewPassword('');
+                      setConfirmNewPassword('');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-xs font-bold text-gray-500 hover:text-black transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="space-y-5">
+                {forgotStage === 'request' && (
+                  <>
+                    <p className="text-sm font-semibold text-gray-600">
+                      Send a 6-digit verification code to your admin phone number.
+                    </p>
+                    <div>
+                      <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="reset-phone">
+                        Phone Number
+                      </label>
+                      <div className="relative">
+                        <FiPhone className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          id="reset-phone"
+                          type="tel"
+                          value={phone}
+                          onChange={(e) => setPhone(normalizePhoneInput(e.target.value))}
+                          inputMode="numeric"
+                          pattern="0[0-9]{9}"
+                          maxLength={10}
+                          placeholder="0XXXXXXXXX"
+                          className="w-full rounded-[1.5rem] bg-gray-50 py-4 pl-12 pr-5 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                        />
+                      </div>
+                    </div>
                     <button
-                      onClick={login}
+                      type="button"
+                      onClick={requestResetCode}
                       disabled={loading}
-                      className="mt-8 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
+                      className="w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg transition-all duration-300 hover:scale-[1.01] disabled:opacity-60"
                     >
-                      {loading ? 'Signing in...' : 'Sign In'}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setForgotMode(true);
-                        setForgotStage('request');
-                        clearResetCode();
-                        setNewPassword('');
-                        setConfirmNewPassword('');
-                        setAuthError('');
-                        setAuthSuccess('');
-                      }}
-                      className="mt-4 w-full rounded-[2rem] bg-white py-4 text-sm font-bold text-black transition-all hover:bg-white"
-                    >
-                      Forgot password?
+                      {loading ? 'Sending code...' : 'Send verification code'}
                     </button>
                   </>
                 )}
 
-                {forgotMode && (
+                {forgotStage === 'verify' && (
                   <>
-                    {forgotStage === 'request' && (
-                      <>
-                        <p className="mb-2 text-sm font-semibold text-gray-600">Send a 6-digit verification code to {phone.trim()}.</p>
-                        <button
-                          onClick={requestResetCode}
-                          disabled={loading}
-                          className="mt-2 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
-                        >
-                          {loading ? 'Sending code...' : 'Send verification code'}
-                        </button>
-                      </>
-                    )}
-
-                    {forgotStage === 'verify' && (
-                      <>
-                        <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="resetCode-0">Verification Code</label>
-                        <div className="grid grid-cols-6 gap-2 sm:gap-3">
-                          {Array.from({ length: 6 }, (_, index) => (
-                            <input
-                              key={index}
-                              id={`resetCode-${index}`}
-                              ref={(el) => {
-                                codeInputRefs.current[index] = el;
-                              }}
-                              type="text"
-                              value={resetCodeDigits[index] || ''}
-                              onChange={(e) => handleResetDigitChange(index, e.target.value)}
-                              onKeyDown={(e) => handleResetDigitKeyDown(index, e)}
-                              onPaste={(e) => {
-                                e.preventDefault();
-                                handleResetDigitPaste(index, e.clipboardData.getData('text'));
-                              }}
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                              maxLength={1}
-                              className="h-14 w-full rounded-xl bg-gray-50 text-center text-lg font-black text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                            />
-                          ))}
-                        </div>
-                        <button
-                          onClick={verifyResetCode}
-                          disabled={loading}
-                          className="mt-4 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
-                        >
-                          {loading ? 'Verifying...' : 'Verify code'}
-                        </button>
-                        <button
-                          onClick={requestResetCode}
-                          disabled={loading}
-                          className="mt-3 w-full rounded-[2rem] bg-gray-100 py-4 text-sm font-bold text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800"
-                        >
-                          Resend code
-                        </button>
-                      </>
-                    )}
-
-                    {forgotStage === 'reset' && (
-                      <>
-                        <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="newPassword">New Password</label>
+                    <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="resetCode-0">
+                      Verification Code
+                    </label>
+                    <div className="grid grid-cols-6 gap-2 sm:gap-3">
+                      {Array.from({ length: 6 }, (_, index) => (
                         <input
-                          id="newPassword"
-                          type="password"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="New password (min 6 chars)"
-                          className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                          key={index}
+                          id={`resetCode-${index}`}
+                          ref={(el) => {
+                            codeInputRefs.current[index] = el;
+                          }}
+                          type="text"
+                          value={resetCodeDigits[index] || ''}
+                          onChange={(e) => handleResetDigitChange(index, e.target.value)}
+                          onKeyDown={(e) => handleResetDigitKeyDown(index, e)}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            handleResetDigitPaste(index, e.clipboardData.getData('text'));
+                          }}
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={1}
+                          className="h-14 w-full rounded-xl bg-gray-50 text-center text-lg font-black text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
                         />
-                        <label className="mb-2 mt-4 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="confirmNewPassword">Confirm Password</label>
-                        <input
-                          id="confirmNewPassword"
-                          type="password"
-                          value={confirmNewPassword}
-                          onChange={(e) => setConfirmNewPassword(e.target.value)}
-                          placeholder="Re-enter new password"
-                          className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                        />
-                        <button
-                          onClick={resetPassword}
-                          disabled={loading}
-                          className="mt-4 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
-                        >
-                          {loading ? 'Resetting password...' : 'Reset password'}
-                        </button>
-                      </>
-                    )}
-
+                      ))}
+                    </div>
                     <button
-                      onClick={() => {
-                        setForgotMode(false);
-                        setForgotStage('request');
-                        clearResetCode();
-                        setNewPassword('');
-                        setConfirmNewPassword('');
-                        setAuthError('');
-                        setAuthSuccess('');
-                      }}
-                      className="mt-4 w-full rounded-[2rem] bg-gray-100 py-4 text-sm font-bold text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800"
+                      type="button"
+                      onClick={verifyResetCode}
+                      disabled={loading}
+                      className="mt-4 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg transition-all duration-300 hover:scale-[1.01] disabled:opacity-60"
                     >
-                      Back to sign in
+                      {loading ? 'Verifying...' : 'Verify code'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={requestResetCode}
+                      disabled={loading}
+                      className="w-full rounded-[2rem] bg-gray-100 py-3.5 text-sm font-bold text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800"
+                    >
+                      Resend code
+                    </button>
+                  </>
+                )}
+
+                {forgotStage === 'reset' && (
+                  <>
+                    <div>
+                      <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="newPassword">
+                        New Password
+                      </label>
+                      <input
+                        id="newPassword"
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        placeholder="New password (min 6 chars)"
+                        className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-xs font-black uppercase tracking-wider text-gray-500" htmlFor="confirmNewPassword">
+                        Confirm Password
+                      </label>
+                      <input
+                        id="confirmNewPassword"
+                        type="password"
+                        value={confirmNewPassword}
+                        onChange={(e) => setConfirmNewPassword(e.target.value)}
+                        placeholder="Re-enter new password"
+                        className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetPassword}
+                      disabled={loading}
+                      className="w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg transition-all duration-300 hover:scale-[1.01] disabled:opacity-60"
+                    >
+                      {loading ? 'Resetting password...' : 'Reset password'}
                     </button>
                   </>
                 )}
 
                 <button
+                  type="button"
                   onClick={() => {
-                    setStep('phone');
-                    setPassword('');
-                    setAuthError('');
-                    setAuthSuccess('');
                     setForgotMode(false);
                     setForgotStage('request');
                     clearResetCode();
                     setNewPassword('');
                     setConfirmNewPassword('');
+                    setAuthError('');
+                    setAuthSuccess('');
                   }}
-                  className="mt-4 w-full rounded-[2rem] bg-gray-100 py-4 text-sm font-bold text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800"
+                  className="w-full rounded-[2rem] bg-gray-100 py-3.5 text-sm font-bold text-gray-600 transition-all hover:bg-gray-200 hover:text-gray-800"
                 >
-                  Use another number
+                  Back to admin sign in
                 </button>
-              </>
+              </div>
             )}
 
-            {step === 'signup' && (
-              <>
-                <div className="space-y-4">
-                  <input
-                    type="text"
-                    value={profile.fullName}
-                    onChange={(e) => setProfile(prev => ({ ...prev, fullName: e.target.value }))}
-                    placeholder="Full name"
-                    className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <input
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="Email (optional)"
-                    className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <input
-                    type="text"
-                    value={profile.address}
-                    onChange={(e) => setProfile(prev => ({ ...prev, address: e.target.value }))}
-                    placeholder="Address (optional)"
-                    className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <input
-                    type="text"
-                    value={profile.city}
-                    onChange={(e) => setProfile(prev => ({ ...prev, city: e.target.value }))}
-                    placeholder="City"
-                    className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Create password (min 6 chars)"
-                    className="w-full rounded-[1.5rem] bg-gray-50 px-5 py-4 text-sm font-bold text-gray-800 shadow-sm ring-1 ring-gray-200 transition-all focus:outline-none focus:ring-2 focus:ring-black"
-                  />
-                </div>
-                <button
-                  onClick={signup}
-                  disabled={loading}
-                  className="mt-8 w-full rounded-[2rem] bg-gradient-to-r from-black to-gray-900 py-4 text-base font-black text-white shadow-lg shadow-none transition-all duration-300 hover:scale-[1.02] hover:shadow-none disabled:scale-100 disabled:opacity-60"
-                >
-                  {loading ? 'Creating account...' : 'Create Account'}
-                </button>
-              </>
-            )}
-
-            {authError && <p className="mt-3 text-sm font-semibold text-black">{authError}</p>}
-            {authSuccess && <p className="mt-3 text-sm font-semibold text-gray-600">{authSuccess}</p>}
-
-            <p className="text-xs text-gray-500 mt-4">
-              By continuing, you agree to receive account-related messages.
-            </p>
+            {authError && <p className="mt-4 text-sm font-semibold text-red-600 bg-red-50 p-3 rounded-xl border border-red-100">{authError}</p>}
+            {authSuccess && <p className="mt-4 text-sm font-semibold text-emerald-600 bg-emerald-50 p-3 rounded-xl border border-emerald-100">{authSuccess}</p>}
 
             <div className="mt-8 flex justify-center border-t border-gray-100 pt-6">
               <Link href="/" className="text-sm font-bold text-gray-500 transition-colors hover:text-black">
@@ -716,3 +632,4 @@ export default function AccountPage() {
     </div>
   );
 }
+

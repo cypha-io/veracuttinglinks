@@ -34,6 +34,10 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Invalid password' }, { status: 401 });
     }
 
+    if (user.role !== 'admin') {
+      return Response.json({ error: 'Access denied. Only admin accounts are permitted.' }, { status: 403 });
+    }
+
     const token = await createSessionForUser(user.id);
 
     const response = NextResponse.json({

@@ -21,8 +21,8 @@ export async function POST(request: Request) {
 
     const user = await getUserByPhone(phone);
 
-    if (!user) {
-      return Response.json({ exists: false, hasPassword: false });
+    if (!user || user.role !== 'admin') {
+      return Response.json({ exists: false, hasPassword: false, error: 'No admin account found with this phone number.' });
     }
 
     return Response.json({
