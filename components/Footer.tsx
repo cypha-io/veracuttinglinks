@@ -2,16 +2,7 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { FiMail } from 'react-icons/fi';
-import { FaInstagram, FaSnapchat, FaTiktok, FaWhatsapp } from 'react-icons/fa6';
-
-const SOCIALS = [
-  { name: 'Snapchat', link: 'https://snapchat.com/t/ZUch8xYy' , handle: 'ZUch8xYy' },
-  { name: 'TikTok', link: 'https://www.tiktok.com/@.veracuttinglinks', handle: '@veracuttinglinks' },
-  { name: 'Instagram', link: 'https://www.instagram.com/veracuttinglinks_?igsh=MXhnZHNhNGw0N3FwYg%3D%3D&utm_source=qr', handle: '@veracuttinglinks_' },
-  { name: 'WhatsApp', link: 'https://wa.me/+233206742769', handle: '+233 206 742 769' },
-  { name: 'Email', link: 'mailto:shopveracuttinglinks@gmail.com', handle: 'shopveracuttinglinks@gmail.com' },
-];
+import { BUSINESS_LOCATION, BUSINESS_PHONE, BUSINESS_PHONE_LINK } from './socials';
 
 export default function Footer() {
   return (
@@ -27,29 +18,11 @@ export default function Footer() {
             <p className="text-white text-sm md:text-base">
               Inspired by elegant style, Vera Cutting Links curates celestial clothing that shines with timeless elegance and elegant designs.
             </p>
-            <div className="flex justify-center gap-4 pt-1">
-              {SOCIALS.map((social) => (
-                <a
-                  key={social.name}
-                  href={social.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={social.name}
-                  className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
-                >
-                  {social.name === 'Snapchat' ? (
-                    <FaSnapchat className="text-xl" />
-                  ) : social.name === 'TikTok' ? (
-                    <FaTiktok className="text-xl" />
-                  ) : social.name === 'Instagram' ? (
-                    <FaInstagram className="text-xl" />
-                  ) : social.name === 'WhatsApp' ? (
-                    <FaWhatsapp className="text-xl" />
-                  ) : (
-                    <FiMail className="text-xl" />
-                  )}
-                </a>
-              ))}
+            <div className="text-sm text-white/90 space-y-1">
+              <p>
+                <a href={BUSINESS_PHONE_LINK} className="hover:underline">{BUSINESS_PHONE}</a>
+              </p>
+              <p>{BUSINESS_LOCATION}</p>
             </div>
             <p className="text-white/90 text-xs md:text-sm pt-2">
               © 2026 Vera Cutting Links. All rights reserved.

@@ -68,7 +68,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-2xl font-black text-gray-800 mb-4">8. Contact Information</h2>
             <p className="text-gray-700 leading-relaxed">
-              For questions about these Terms & Conditions, contact us at info@veracuttinglinks.com or +233 XX XXX XXXX.
+              For questions about these Terms & Conditions, contact us on +233 (0) 244 932 380.
             </p>
           </section>
         </div>

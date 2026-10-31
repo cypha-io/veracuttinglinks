@@ -37,7 +37,7 @@ type Message = {
 };
 import { SOCIALS } from './socials';
 import { FaInstagram, FaSnapchat, FaTiktok, FaWhatsapp } from 'react-icons/fa6';
-import { FiMail } from 'react-icons/fi';
+import { FiMail, FiPhone } from 'react-icons/fi';
 
 export default function SupportChatbot() {
   const pathname = usePathname();
@@ -470,7 +470,7 @@ export default function SupportChatbot() {
                       Socials & Contacts
                     </span>
                     <span className="text-[11px] font-medium text-gray-500 mt-0.5">
-                      Connect with us on socials or WhatsApp
+                      Call us or find our location
                     </span>
                   </div>
                   <svg className="w-4 h-4 text-gray-300 group-hover:text-green-600 transition-transform duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -534,14 +534,16 @@ export default function SupportChatbot() {
                   <button
                     key={index}
                     onClick={() => {
-                      window.open(social.link, '_blank');
+                      window.location.href = social.link;
                       setIsOpen(false);
                     }}
                     className="w-full flex items-center gap-4 p-3 rounded-xl hover:bg-slate-50 hover:shadow-sm border border-transparent hover:border-gray-100 transition-all duration-300 group text-left"
                   >
                     <div className="relative shrink-0">
                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center border border-slate-200/50 group-hover:scale-110 transition-transform duration-300">
-                        {social.name === 'Snapchat' ? (
+                        {social.name === 'Call Us' ? (
+                          <FiPhone className="w-5 h-5 text-slate-500" />
+                        ) : social.name === 'Snapchat' ? (
                           <FaSnapchat className="w-5 h-5 text-slate-500" />
                         ) : social.name === 'TikTok' ? (
                           <FaTiktok className="w-5 h-5 text-slate-500" />
